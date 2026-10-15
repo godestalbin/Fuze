@@ -17,11 +17,11 @@ jobs:
       - name: Checkout source repository
         uses: actions/checkout@v4
 
-      - name: Publish to GitHub Pages repository
+      - name: Publish Fuze to user GitHub Pages repository
         env:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
         run: |
-          git clone https://x-access-token:${GH_TOKEN}@github.com/godestalbin/fuze.github.io.git destination
+          git clone https://x-access-token:${GH_TOKEN}@github.com/godestalbin/godestalbin.github.io.git destination
           cp Fuze.html destination/index.html
           cp favicon.png destination/favicon.png
           cp pipette.png destination/pipette.png
