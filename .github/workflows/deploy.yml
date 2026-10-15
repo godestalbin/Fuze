@@ -26,7 +26,7 @@ jobs:
           cp favicon.png destination/favicon.png
           cp pipette.png destination/pipette.png
           cp style.css destination/style.css
-          cp -r js destination/js
+          cp -r js/. destination/js
           cd destination
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
