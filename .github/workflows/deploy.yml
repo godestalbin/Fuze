@@ -23,6 +23,7 @@ jobs:
         run: |
           git clone https://x-access-token:${GH_TOKEN}@github.com/godestalbin/godestalbin.github.io.git destination
           cp Fuze.html destination/index.html
+          cp help.html destination/help.html
           cp favicon.png destination/favicon.png
           cp pipette.png destination/pipette.png
           cp style.css destination/style.css
