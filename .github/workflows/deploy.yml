@@ -22,10 +22,9 @@ jobs:
           GH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
         run: |
           git clone https://x-access-token:${GH_TOKEN}@github.com/godestalbin/godestalbin.github.io.git destination
-          cp Fuze.html destination/index.html
-          cp help.html destination/help.html
-          cp favicon.png destination/favicon.png
-          cp pipette.png destination/pipette.png
+          cp *.html destination/
+          mv destination/Fuze.html destination/index.html
+          cp *.png destination/
           cp style.css destination/style.css
           cp -r js/. destination/js
           cd destination
