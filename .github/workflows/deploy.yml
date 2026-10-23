@@ -24,8 +24,8 @@ jobs:
           git clone https://x-access-token:${GH_TOKEN}@github.com/godestalbin/godestalbin.github.io.git destination
           cp *.html destination/
           mv destination/Fuze.html destination/index.html
+          cp *.css destination/
           cp *.png destination/
-          cp style.css destination/style.css
           cp -r js/. destination/js
           cd destination
           git config user.name "github-actions[bot]"
