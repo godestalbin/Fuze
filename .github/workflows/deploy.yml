@@ -26,6 +26,7 @@ jobs:
           mv destination/Fuze.html destination/index.html
           cp *.css destination/
           cp *.png destination/
+          cp ads.txt destination/
           cp -r js/. destination/js
           cd destination
           git config user.name "github-actions[bot]"
