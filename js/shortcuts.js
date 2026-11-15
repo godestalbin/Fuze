@@ -679,6 +679,14 @@ document.addEventListener("keydown", event => {
         return;
     }
 
+    // Tampon : Shift+T.
+    if (!event.ctrlKey && !event.altKey && !event.metaKey && event.shiftKey && key === "t") {
+        event.preventDefault();
+        setTool("stamp");
+        document.querySelectorAll(".toolbar-menu").forEach(menu => menu.removeAttribute("open"));
+        return;
+    }
+
     // Flèche simple : Shift+A.
     if (!event.ctrlKey && !event.altKey && !event.metaKey && event.shiftKey && key === "a") {
         event.preventDefault();

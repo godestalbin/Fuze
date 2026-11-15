@@ -146,6 +146,15 @@ function syncControlsFromSelectedObject() {
     strokeOpacityInput.value = String(Math.max(10, Math.min(100, Math.round(opacity * 100))));
     updateStrokeOpacityLabel();
 
+    if (object.fuzeTool === "stamp") {
+        if (object.stampColor) colorInput.value = object.stampColor;
+        if (Number.isFinite(object.stampFontSize)) fontSizeInput.value = String(object.stampFontSize);
+        if (Number.isFinite(object.stampStrokeWidth)) strokeWidthInput.value = String(object.stampStrokeWidth);
+        strokeOpacityInput.value = String(Math.max(10, Math.min(100, Math.round((object.opacity ?? 1) * 100))));
+        updateStrokeOpacityLabel();
+        return;
+    }
+
     if (object.fuzeTool === "number") {
         const parts = object.getObjects();
         const circle = parts.find(item => item.type === "circle");
@@ -436,6 +445,22 @@ function updateSelectedObject(source = null) {
         canvas.requestRenderAll();
         saveHistory();
         updateStatus("Style appliqué aux objets sélectionnés");
+        return;
+    }
+
+    /* -------------------------------------------------
+       TAMPON / STAMP
+    ------------------------------------------------- */
+
+    if (object.fuzeTool === "stamp") {
+        const changes = {};
+        if (source === "color") changes.color = getColor();
+        if (source === "strokeWidth") changes.strokeWidth = getStrokeWidth();
+        if (source === "opacity") changes.opacity = getStrokeOpacity();
+        if (source === "fontSize") changes.fontSize = getFontSize();
+        if (Object.keys(changes).length) {
+            updateStampObject(object, changes).then(() => updateStatus("Tampon modifié"));
+        }
         return;
     }
 

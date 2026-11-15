@@ -264,6 +264,189 @@
         syncImageBorder(image);
     }
 
+    /* =====================================================
+       TAMPON / STAMP
+    ===================================================== */
+
+    let stampText = "";
+    const stampModal = document.getElementById("stampModal");
+    const stampForm = document.getElementById("stampForm");
+    const stampTextInput = document.getElementById("stampTextInput");
+
+    function closeStampDialog(cancelled = false) {
+        if (stampModal) stampModal.hidden = true;
+        document.body.classList.remove("stamp-modal-open");
+        if (cancelled) setTool("select");
+    }
+
+    function openStampDialog() {
+        if (!stampModal || !stampTextInput) return;
+        stampTextInput.value = stampText;
+        stampModal.hidden = false;
+        document.body.classList.add("stamp-modal-open");
+        requestAnimationFrame(() => { stampTextInput.focus(); stampTextInput.select(); });
+    }
+
+    stampForm?.addEventListener("submit", event => {
+        event.preventDefault();
+        const value = stampTextInput.value.trim();
+        if (!value) { stampTextInput.focus(); return; }
+        stampText = value.toLocaleUpperCase();
+        closeStampDialog(false);
+        updateStatus(FUZE_LANGUAGE === "en" ? "Stamp: click on the canvas to place it" : "Tampon : cliquez sur le canvas pour le déposer");
+        canvas.upperCanvasEl.style.cursor = "crosshair";
+    });
+
+    document.getElementById("closeStampButton")?.addEventListener("click", () => closeStampDialog(true));
+    document.getElementById("cancelStampButton")?.addEventListener("click", () => closeStampDialog(true));
+    stampModal?.addEventListener("click", event => { if (event.target === stampModal) closeStampDialog(true); });
+
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && stampModal && !stampModal.hidden) {
+            event.preventDefault();
+            closeStampDialog(true);
+        }
+    });
+
+    function createStampSvg(text, color, fontSize, strokeWidth) {
+        const measureCanvas = document.createElement("canvas");
+        const measureContext = measureCanvas.getContext("2d");
+        measureContext.font = `${fontSize}px Impact, Haettenschweiler, "Arial Narrow", sans-serif`;
+        const lines = String(text).split(/\r?\n/).filter(Boolean);
+        const lineHeight = fontSize * 0.92;
+        const textWidth = Math.max(1, ...lines.map(line => measureContext.measureText(line).width));
+        // STAMP LAYOUT PARAMETERS (all values are relative to the SVG's source pixels).
+        // Change these two values to adjust the fixed clear space between text and frame.
+        // They deliberately do NOT depend on strokeWidth.
+        const textFrameGapX = fontSize * 0.16;
+        const textFrameGapY = fontSize * 0.12;
+
+        // The frame grows outwards when its stroke gets thicker, so its INNER edge
+        // stays at exactly the same distance from the text.
+        const width = Math.ceil(textWidth + 2 * (textFrameGapX + strokeWidth));
+        const height = Math.ceil(lines.length * lineHeight + 2 * (textFrameGapY + strokeWidth));
+        const inset = strokeWidth / 2;
+        const radius = Math.max(7, Math.min(fontSize * 0.2, height * 0.18));
+        const frame = `<rect x="${inset}" y="${inset}" width="${width - inset * 2}" height="${height - inset * 2}" rx="${radius}" ry="${radius}" fill="none" stroke="${color}" stroke-width="${strokeWidth}"/>`;
+        const firstBaseline = (height - (lines.length - 1) * lineHeight) / 2 + fontSize * 0.34;
+        const textMarkup = lines.map((line, index) =>
+            `<text x="${width / 2}" y="${firstBaseline + index * lineHeight}" text-anchor="middle" font-family="Impact, Haettenschweiler, Arial Narrow, sans-serif" font-size="${fontSize}" font-weight="400" letter-spacing="0.5" fill="${color}">${escapeStampXml(line)}</text>`
+        ).join("");
+
+        // Deterministic irregular ink voids: the same stamp remains visually stable
+        // when its color, size or border thickness is edited.
+        let seed = Array.from(text).reduce((sum, char) => ((sum * 31) + char.charCodeAt(0)) >>> 0, 2166136261);
+        const random = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+        const holes = [];
+
+        // STAMP GRAIN PARAMETERS — safe to adjust without changing the algorithm.
+        // Higher holesPerArea = more numerous ink voids (denser worn texture).
+        // Smaller radius values = finer grain. Values are in SVG source pixels.
+        const grain = {
+            holesPerArea: 1 / 10,  // previous version: approximately 1 / 210
+            minimumHoles: 120,
+            maximumHoles: 12000,
+            minRadiusX: 0.01,
+            maxRadiusX: 1.82,
+            minRadiusY: 0.01,
+            maxRadiusY: 1.70,
+            irregularity: 0.99
+        };
+        const count = Math.min(grain.maximumHoles, Math.max(
+            grain.minimumHoles,
+            Math.round(width * height * grain.holesPerArea)
+        ));
+        for (let i = 0; i < count; i++) {
+            const radiusX = grain.minRadiusX + random() * (grain.maxRadiusX - grain.minRadiusX);
+            const radiusY = grain.minRadiusY + random() * (grain.maxRadiusY - grain.minRadiusY);
+            const cx = 3 + random() * (width - 6);
+            const cy = 3 + random() * (height - 6);
+            const vertices = 5 + Math.floor(random() * 5);
+            const points = [];
+            for (let point = 0; point < vertices; point++) {
+                const angle = (Math.PI * 2 * point / vertices) + (random() - 0.5) * grain.irregularity;
+                const roughness = 0.55 + random() * 0.65;
+                points.push([
+                    (cx + Math.cos(angle) * radiusX * roughness).toFixed(2),
+                    (cy + Math.sin(angle) * radiusY * roughness).toFixed(2)
+                ]);
+            }
+            const path = points.map((point, index) => `${index ? "L" : "M"}${point[0]} ${point[1]}`).join(" ") + " Z";
+            holes.push(`<path d="${path}" fill="black"/>`);
+        }
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><mask id="inkMask"><rect width="100%" height="100%" fill="white"/>${holes.join("")}</mask></defs><g mask="url(#inkMask)">${frame}${textMarkup}</g></svg>`;
+        return { svg, width, height };
+    }
+
+    function escapeStampXml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;"
+        })[char]);
+    }
+
+    async function createStampObject(text, x, y, style = {}) {
+        const color = style.color || getColor();
+        const fontSize = Number(style.fontSize || getFontSize());
+        const strokeWidth = Number(style.strokeWidth || getStrokeWidth());
+        const opacity = Number(style.opacity ?? getStrokeOpacity());
+        const { svg, width, height } = createStampSvg(text, color, fontSize, strokeWidth);
+        const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        const image = await fabric.Image.fromURL(dataUrl);
+        image.set({
+            left: x, top: y, originX: "center", originY: "center",
+            opacity, selectable: true, evented: true, objectCaching: false
+        });
+        image.fuzeTool = "stamp";
+        image.stampText = text;
+        image.stampFontSize = fontSize;
+        image.stampStrokeWidth = strokeWidth;
+        image.stampColor = color;
+        image.stampWidth = width;
+        image.stampHeight = height;
+        return image;
+    }
+
+    async function addStampAt(event) {
+        if (!stampText) { openStampDialog(); return; }
+        const pointer = canvas.getScenePoint(event);
+        const stamp = await createStampObject(stampText, pointer.x, pointer.y);
+        canvas.add(stamp);
+        canvas.setActiveObject(stamp);
+        canvas.requestRenderAll();
+        saveHistory();
+        trackEvent("element_created", { element_type: "stamp" });
+    }
+
+    async function updateStampObject(object, changes = {}) {
+        const style = {
+            color: changes.color ?? object.stampColor,
+            fontSize: changes.fontSize ?? object.stampFontSize,
+            strokeWidth: changes.strokeWidth ?? object.stampStrokeWidth,
+            opacity: changes.opacity ?? object.opacity
+        };
+        const replacement = await createStampObject(object.stampText, object.left, object.top, style);
+        replacement.set({
+            angle: object.angle,
+            scaleX: object.scaleX,
+            scaleY: object.scaleY,
+            flipX: object.flipX,
+            flipY: object.flipY
+        });
+        const index = canvas.getObjects().indexOf(object);
+        if (index < 0) return;
+        canvas.remove(object);
+        canvas.insertAt(index, replacement);
+        canvas.setActiveObject(replacement);
+        replacement.setCoords();
+        canvas.requestRenderAll();
+        syncControlsFromSelectedObject();
+        saveHistory();
+    }
+
+
     function setTool(tool) {
 
         // Tout changement d'outil (menu ou raccourci clavier) quitte la pipette.
@@ -340,6 +523,7 @@
 
         syncThicknessControl();
         canvas.renderAll();
+        if (tool === "stamp") openStampDialog();
     }
 
 
@@ -1909,7 +2093,8 @@
         if (
             currentTool === "select" ||
             currentTool === "text" ||
-            currentTool === "number"
+            currentTool === "number" ||
+            currentTool === "stamp"
         ) {
             return;
         }
@@ -2449,6 +2634,11 @@
 
             if (currentTool === "number") {
                 addNumberAt(event.e);
+                return;
+            }
+
+            if (currentTool === "stamp") {
+                addStampAt(event.e);
                 return;
             }
 
