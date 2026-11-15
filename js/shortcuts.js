@@ -322,6 +322,9 @@ async function copySelectedObjects() {
 async function pasteCopiedObjects() {
     if (!fuzeObjectClipboard?.length) return;
 
+    // Un collage crée une sélection éditable : quitter d'abord l'outil actif.
+    setTool("select");
+
     try {
         const pasted = await Promise.all(
             fuzeObjectClipboard.map(object =>

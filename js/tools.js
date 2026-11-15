@@ -50,6 +50,32 @@
         strokeWidthInput.title = "Épaisseur";
     }
 
+    function getHighlightFillColor(color = getColor(), alpha = 0.30) {
+        const value = String(color || "#ffd21e").trim();
+        let r, g, b;
+        const hex = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+        if (hex) {
+            const h = hex[1].length === 3 ? hex[1].split("").map(c => c + c).join("") : hex[1];
+            r = parseInt(h.slice(0, 2), 16);
+            g = parseInt(h.slice(2, 4), 16);
+            b = parseInt(h.slice(4, 6), 16);
+        } else {
+            const rgb = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+            if (rgb) [, r, g, b] = rgb.map(Number);
+            else return `rgba(255,210,30,${alpha})`;
+        }
+        return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function makeOuterShapeShadow() {
+        return new fabric.Shadow({
+            color: "rgba(0,0,0,0.48)",
+            blur: 8,
+            offsetX: 0,
+            offsetY: 0
+        });
+    }
+
     function getStrokeOpacity() {
         const value = Number(strokeOpacityInput?.value ?? 55);
         return Math.max(0.1, Math.min(1, (Number.isFinite(value) ? value : 55) / 100));
@@ -187,6 +213,8 @@
             const existingBorder = canvas.getObjects().find(obj => obj.fuzeBorderOwnerId === image.fuzeBorderId);
             if (existingBorder) {
                 canvas.remove(existingBorder);
+                const existingShadow = canvas.getObjects().find(obj => obj.fuzeBorderShadowOwnerId === image.fuzeBorderId);
+                if (existingShadow) canvas.remove(existingShadow);
                 canvas.requestRenderAll();
                 updateStatus("Bordure supprimée");
                 return;
@@ -198,6 +226,25 @@
         const bounds = image.getBoundingRect();
         const width = getStrokeWidth();
         const strokeWidth = width;
+
+        // Cette forme noire est placée derrière l'image : celle-ci masque
+        // toute son ombre intérieure et ne laisse visible que l'ombre extérieure.
+        const shadowBacking = new fabric.Rect({
+            left: bounds.left - strokeWidth,
+            top: bounds.top - strokeWidth,
+            width: Math.max(1, bounds.width + strokeWidth),
+            height: Math.max(1, bounds.height + strokeWidth),
+            rx: Math.min(14, Math.max(4, Math.min(bounds.width, bounds.height) * 0.04)),
+            ry: Math.min(14, Math.max(4, Math.min(bounds.width, bounds.height) * 0.04)),
+            fill: "#000000",
+            strokeWidth: 0,
+            shadow: makeOuterShapeShadow(),
+            selectable: false,
+            evented: false,
+            objectCaching: false,
+            fuzeBorderShadowOwnerId: id
+        });
+        canvas.add(shadowBacking);
 
         const border = new fabric.Rect({
             left: bounds.left - strokeWidth,
@@ -224,7 +271,8 @@
         const imageIndex = objects.indexOf(image);
 
         if (imageIndex !== -1) {
-            canvas.moveObjectTo(border, imageIndex + 1);
+            canvas.moveObjectTo(shadowBacking, imageIndex);
+            canvas.moveObjectTo(border, canvas.getObjects().indexOf(image) + 1);
         }
         // Reassert these flags after insertion/reordering: the image remains
         // the only interactive object in the image + border pair.
@@ -239,6 +287,7 @@
     function syncImageBorder(image) {
         if (!image || image.type !== "image" || !image.fuzeBorderId) return;
         const border = canvas.getObjects().find(obj => obj.fuzeBorderOwnerId === image.fuzeBorderId);
+        const shadowBacking = canvas.getObjects().find(obj => obj.fuzeBorderShadowOwnerId === image.fuzeBorderId);
         if (!border) return;
         const bounds = image.getBoundingRect();
         const width = Number(border.strokeWidth) || 1;
@@ -254,6 +303,17 @@
             ry: radius
         });
         border.setCoords();
+        if (shadowBacking) {
+            shadowBacking.set({
+                left: bounds.left - strokeWidth,
+                top: bounds.top - strokeWidth,
+                width: Math.max(1, bounds.width + strokeWidth),
+                height: Math.max(1, bounds.height + strokeWidth),
+                rx: radius,
+                ry: radius
+            });
+            shadowBacking.setCoords();
+        }
     }
 
     function updateImageBorderStyle(image, color = getColor(), width = getStrokeWidth()) {
@@ -504,11 +564,11 @@
 
             canvas.forEachObject(
                 object => {
-                    // Les objets restent détectables pendant qu'un outil de
-                    // dessin est actif : un clic dessus doit pouvoir basculer
-                    // en mode Sélection. Les bordures d'image restent décoratives.
+                    // Les objets restent détectables (evented) pour distinguer
+                    // un clic d'un glissement, mais ne sont pas déplaçables par
+                    // Fabric tant qu'un outil de dessin est actif.
                     const isImageBorder = object.fuzeTool === "border" || object.fuzeBorderOwnerId;
-                    object.selectable = !isImageBorder;
+                    object.selectable = false;
                     object.evented = !isImageBorder;
                 }
             );
@@ -1775,6 +1835,11 @@
 
     function moveArrowHandle(event) {
         if (!draggingArrowHandle || !editingArrow) return;
+
+        // Le premier déplacement d'une poignée termine l'outil courant :
+        // la poignée reste prioritaire et l'édition se poursuit en mode Sélection.
+        if (currentTool !== "select") setTool("select");
+
         const point = canvas.getScenePoint(event);
         lastArrowHandlePoint = { x: point.x, y: point.y };
         updateArrowHandleAtPoint(
@@ -2162,7 +2227,10 @@
                         getColor(),
 
                     strokeWidth:
-                        getStrokeWidth()
+                        getStrokeWidth(),
+                    strokeUniform: true,
+                    lockUniScaling: false,
+                    shadow: makeOuterShapeShadow()
                 });
         }
 
@@ -2196,7 +2264,10 @@
                         getColor(),
 
                     strokeWidth:
-                        getStrokeWidth()
+                        getStrokeWidth(),
+                    strokeUniform: true,
+                    lockUniScaling: false,
+                    shadow: makeOuterShapeShadow()
                 });
         }
 
@@ -2228,13 +2299,12 @@
                     rx: 6,
                     ry: 6,
 
-                    fill:
-                        "rgba(255,220,50,0.30)",
-
-                    stroke:
-                        "rgba(255,210,30,0.85)",
-
-                    strokeWidth: 2,
+                    fill: getHighlightFillColor(),
+                    stroke: getColor(),
+                    strokeWidth: getStrokeWidth(),
+                    strokeUniform: true,
+                    lockUniScaling: false,
+                    shadow: makeOuterShapeShadow(),
                     fuzeTool: "highlight"
                 });
         }
@@ -2271,10 +2341,13 @@
                     fill:
                         "rgba(80,80,80,0.20)",
 
-                    stroke:
-                        "rgba(80,80,80,0.70)",
+                    // Le rectangle de prévisualisation du blur ne doit jamais
+                    // dessiner de contour : seul le remplissage indique la zone.
+                    stroke: "rgba(80,80,80,0)",
 
-                    strokeWidth: 2,
+                    strokeWidth: 0,
+                    strokeUniform: true,
+                    lockUniScaling: false,
 
                     selectable: false,
                     evented: false
@@ -2590,92 +2663,138 @@
     SOURIS CANVAS
     ===================================================== */
 
-    canvas.on(
-        "mouse:down",
-        event => {
+    // Les outils de tracé (rectangle, cercle, highlight, blur, feutre,
+    // flèches) travaillent par clic + déplacement + relâchement.
+    // Si le geste commence sur un objet existant, il s'agit au contraire
+    // d'un déplacement : on bascule en Sélection au seuil de déplacement
+    // et on déplace cet objet, sans démarrer un second tracé.
+    let pendingObjectGesture = null;
+    const OBJECT_DRAG_THRESHOLD = 4; // pixels écran
 
-            if (eyedropperActive) {
-                const color = sampleCanvasColor(event.e);
-
-                // Fabric peut désélectionner l'objet quand le clic de la pipette
-                // tombe sur le fond du canvas. On restaure donc la sélection
-                // mémorisée avant d'appliquer la nouvelle couleur.
-                restoreEyedropperSelection();
-
-                if (color) {
-                    colorInput.value = color;
-                    colorInput.dispatchEvent(new Event("input", { bubbles: true }));
-                    colorInput.dispatchEvent(new Event("change", { bubbles: true }));
-
-                    // updateSelectedObject peut remplacer une flèche : mémoriser
-                    // la sélection mise à jour permet de réutiliser la pipette.
-                    rememberEyedropperSelection();
-                    // La pipette reste active pour permettre plusieurs prélèvements
-                    // successifs sans devoir la réactiver après chaque couleur.
-                    updateStatus("Couleur prélevée : " + color + " — pipette toujours active");
-                } else {
-                    updateStatus("Impossible de prélever cette couleur.");
-                }
-                return;
+    canvas.on("mouse:down", event => {
+        if (eyedropperActive) {
+            const color = sampleCanvasColor(event.e);
+            restoreEyedropperSelection();
+            if (color) {
+                colorInput.value = color;
+                colorInput.dispatchEvent(new Event("input", { bubbles: true }));
+                colorInput.dispatchEvent(new Event("change", { bubbles: true }));
+                rememberEyedropperSelection();
+                updateStatus("Couleur prélevée : " + color + " — pipette toujours active");
+            } else {
+                updateStatus("Impossible de prélever cette couleur.");
             }
+            return;
+        }
 
-            // Si un outil de création est actif mais que le clic touche un
-            // objet existant, privilégier cet objet : revenir immédiatement
-            // en mode Sélection au lieu de dessiner/ajouter un élément dessus.
-            if (
-                currentTool !== "select" &&
-                event.target &&
-                event.target.fuzeTool !== "border" &&
-                !event.target.fuzeBorderOwnerId
-            ) {
+        // Outils à clic unique : aucune logique de glissement ne s'applique.
+        if (currentTool === "number") { addNumberAt(event.e); return; }
+        if (currentTool === "stamp") { addStampAt(event.e); return; }
+        if (currentTool === "text") { addTextAt(event.e); return; }
+
+        // Une image sert de support de dessin : avec un outil de tracé actif,
+        // cliquer/glisser dessus doit toujours démarrer le tracé. Seuls les
+        // objets d'annotation déjà créés interceptent le geste pour être déplacés.
+        // Si Fabric a déjà reconnu une poignée/zone de transformation,
+        // laisser sa transformation prendre la main. Sans ce garde-fou,
+        // le geste est intercepté comme un déplacement manuel d'objet.
+        const viewportPoint = canvas.getViewportPoint(event.e);
+        const activeObject = canvas.getActiveObject();
+        // Fabric ne renseigne pas toujours _currentTransform au moment où cet
+        // écouteur reçoit mouse:down. Tester directement les contrôles de
+        // l'objet actif évite qu'un clic sur une poignée soit interprété comme
+        // le début d'un nouveau tracé (rectangle/cercle/highlight/blur/feutre).
+        const activeObjectControl = activeObject &&
+            typeof activeObject.findControl === "function"
+            ? activeObject.findControl(viewportPoint)
+            : null;
+        const targetControl = event.target &&
+            typeof event.target.findControl === "function"
+            ? event.target.findControl(viewportPoint)
+            : null;
+        const fabricTransformStarted = !!canvas._currentTransform ||
+            !!activeObjectControl || !!targetControl ||
+            !!event.target?.__corner;
+
+        if (fabricTransformStarted) {
+            // Le changement d'outil ne doit pas annuler l'événement Fabric :
+            // Fabric poursuit ainsi la transformation de la poignée cliquée.
+            if (currentTool !== "select") setTool("select");
+            return;
+        }
+
+        if (currentTool !== "select" && event.target &&
+            event.target.type !== "image" &&
+            event.target.fuzeTool !== "border" && !event.target.fuzeBorderOwnerId) {
+            const scenePoint = canvas.getScenePoint(event.e);
+            pendingObjectGesture = {
+                target: event.target,
+                clientX: event.e.clientX,
+                clientY: event.e.clientY,
+                lastX: scenePoint.x,
+                lastY: scenePoint.y,
+                moved: false
+            };
+            return;
+        }
+
+        startDrawing(event);
+    });
+
+    canvas.on("mouse:move", event => {
+        if (pendingObjectGesture) {
+            const gesture = pendingObjectGesture;
+            const dxScreen = event.e.clientX - gesture.clientX;
+            const dyScreen = event.e.clientY - gesture.clientY;
+
+            if (!gesture.moved && Math.hypot(dxScreen, dyScreen) >= OBJECT_DRAG_THRESHOLD) {
+                gesture.moved = true;
                 setTool("select");
-                return;
+                if (canvas.getObjects().includes(gesture.target)) {
+                    canvas.setActiveObject(gesture.target);
+                }
             }
 
-            if (currentTool === "number") {
-                addNumberAt(event.e);
-                return;
+            if (gesture.moved && canvas.getObjects().includes(gesture.target)) {
+                const point = canvas.getScenePoint(event.e);
+                gesture.target.set({
+                    left: gesture.target.left + (point.x - gesture.lastX),
+                    top: gesture.target.top + (point.y - gesture.lastY)
+                });
+                gesture.lastX = point.x;
+                gesture.lastY = point.y;
+                gesture.target.setCoords();
+                canvas.requestRenderAll();
             }
-
-            if (currentTool === "stamp") {
-                addStampAt(event.e);
-                return;
-            }
-
-            if (
-                currentTool ===
-                "text"
-            ) {
-
-                addTextAt(
-                    event.e
-                );
-
-                return;
-            }
-
-
-            startDrawing(event);
+            return;
         }
-    );
 
+        drawingMove(event);
+    });
 
-    canvas.on(
-        "mouse:move",
-        event => {
+    canvas.on("mouse:up", () => {
+        if (pendingObjectGesture) {
+            const gesture = pendingObjectGesture;
+            pendingObjectGesture = null;
 
-            drawingMove(event);
+            if (!gesture.moved) {
+                // Un simple clic sur un objet avec un outil de tracé sélectionne
+                // l'objet et revient en mode Sélection, sans créer de forme.
+                setTool("select");
+                if (gesture.target && canvas.getObjects().includes(gesture.target)) {
+                    canvas.setActiveObject(gesture.target);
+                    canvas.requestRenderAll();
+                }
+            } else {
+                canvas.requestRenderAll();
+                saveHistory();
+                updateEmptyMessage();
+            }
+            return;
         }
-    );
 
-
-    canvas.on(
-        "mouse:up",
-        () => {
-
-            finishDrawing();
-        }
-    );
+        finishDrawing();
+    });
 
     // Fabric peut rétablir son curseur de sélection.
     // Tant que la pipette est active, on lui redonne la priorité.
@@ -2910,8 +3029,9 @@
                     stroke:
                         "#ffffff",
 
+                    // Le contour blanc et son halo suivent la taille du texte.
                     strokeWidth:
-                        8,
+                        Math.max(2, getFontSize() * 0.25),
 
                     strokeLineJoin:
                         "round",
@@ -2944,7 +3064,7 @@
                                 "rgba(99, 99, 99, 0.85)",
 
                             blur:
-                                10,
+                                Math.max(3, getFontSize() * 0.3125),
 
                             offsetX:
                                 0,
@@ -3047,6 +3167,14 @@
     ["object:moving", "object:scaling", "object:rotating", "object:modified"].forEach(eventName => {
         canvas.on(eventName, event => {
             const object = event.target;
+
+            // Un redimensionnement, une rotation ou un déplacement via les
+            // contrôles Fabric doit quitter l'outil de dessin dès le premier
+            // mouvement effectif, sans interrompre la transformation en cours.
+            if (currentTool !== "select" &&
+                ["object:moving", "object:scaling", "object:rotating"].includes(eventName)) {
+                setTool("select");
+            }
 
             if (eventName === "object:moving" && object && event.e?.shiftKey) {
                 // Aimante la position de l'objet ou du groupe sélectionné
@@ -3306,6 +3434,27 @@
     // destruction de l'ActiveSelection lors de la désélection.
     canvas.on("object:modified", event => {
         const object = event.target;
+
+        // Fabric applique parfois le facteur de transformation au contour
+        // lors du redimensionnement. On reporte l'échelle dans la géométrie
+        // et on conserve strokeWidth à sa valeur initiale.
+        if (object && object.strokeWidth > 0 && object.strokeUniform !== true &&
+            ["rect", "ellipse"].includes(object.type)) {
+            object.set({ strokeUniform: true });
+        }
+        if (object && object.strokeWidth > 0 && ["rect", "ellipse"].includes(object.type)) {
+            const sx = Number(object.scaleX) || 1;
+            const sy = Number(object.scaleY) || 1;
+            if (Math.abs(sx - 1) > 0.0001 || Math.abs(sy - 1) > 0.0001) {
+                if (object.type === "rect") {
+                    object.set({ width: object.width * sx, height: object.height * sy, scaleX: 1, scaleY: 1 });
+                } else {
+                    object.set({ rx: object.rx * sx, ry: object.ry * sy, scaleX: 1, scaleY: 1 });
+                }
+                object.setCoords();
+            }
+        }
+
         if (isActiveSelectionObject(object)) {
             // Les coordonnées des flèches ont été mises à jour par delta pendant
             // le déplacement. On ne touche pas à leur géométrie au commit.

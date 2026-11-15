@@ -397,7 +397,17 @@ function updateSelectedObject(source = null) {
                 const properties = {};
                 if (colorWasEdited) properties.fill = newColor;
                 if (opacityWasEdited) properties.opacity = newOpacity;
-                if (fontSizeWasEdited) properties.fontSize = newFontSize;
+                if (fontSizeWasEdited) {
+                    properties.fontSize = newFontSize;
+                    // Conserver un contour blanc et un halo proportionnels à la taille.
+                    properties.strokeWidth = Math.max(2, newFontSize * 0.25);
+                    properties.shadow = new fabric.Shadow({
+                        color: "rgba(99, 99, 99, 0.85)",
+                        blur: Math.max(3, newFontSize * 0.3125),
+                        offsetX: 0,
+                        offsetY: 0
+                    });
+                }
                 item.set(properties);
                 item.setCoords();
                 return;
@@ -427,9 +437,10 @@ function updateSelectedObject(source = null) {
             if (["rect", "ellipse", "path"].includes(item.type)) {
                 const properties = {};
                 if (colorWasEdited) {
-                    properties.stroke = item.fuzeTool === "highlight"
-                        ? "rgba(255,210,30,0.85)"
-                        : newColor;
+                    properties.stroke = newColor;
+                    if (item.fuzeTool === "highlight") {
+                        properties.fill = getHighlightFillColor(newColor, 0.30);
+                    }
                 }
                 if (opacityWasEdited) properties.opacity = newOpacity;
                 if (widthWasEdited) properties.strokeWidth = newWidth;
@@ -632,9 +643,16 @@ function updateSelectedObject(source = null) {
             fontSizeInput
         ) {
 
+            const newFontSize = getFontSize();
             object.set({
-                fontSize:
-                    getFontSize()
+                fontSize: newFontSize,
+                strokeWidth: Math.max(2, newFontSize * 0.25),
+                shadow: new fabric.Shadow({
+                    color: "rgba(99, 99, 99, 0.85)",
+                    blur: Math.max(3, newFontSize * 0.3125),
+                    offsetX: 0,
+                    offsetY: 0
+                })
             });
         }
 
@@ -679,15 +697,17 @@ function updateSelectedObject(source = null) {
         object.type === "path"
     ) {
 
-        object.set({
-
-            stroke:
-                getColor(),
-
+        const selectedColor = getColor();
+        const shapeStyle = {
+            stroke: selectedColor,
             strokeWidth: getStrokeWidth(),
-
-            opacity: getStrokeOpacity()
-        });
+            opacity: getStrokeOpacity(),
+            strokeUniform: true
+        };
+        if (object.fuzeTool === "highlight") {
+            shapeStyle.fill = getHighlightFillColor(selectedColor, 0.30);
+        }
+        object.set(shapeStyle);
 
 
         canvas.requestRenderAll();
