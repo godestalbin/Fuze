@@ -28,6 +28,7 @@ jobs:
           cp *.png destination/
           cp ads.txt destination/
           cp -r js/. destination/js
+          cp -r cursors/. destination/cursors
           cd destination
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
