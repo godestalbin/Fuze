@@ -1,7 +1,7 @@
 # Fuze
 A simple and efficient image screenshot annotation tool
 
-See it live at https://godestalbin.github.io/
+See it live at https://fuze-image.fr/
 
 Contenu :
 - js/i18n.js : langues et traductions
