@@ -26,7 +26,8 @@ jobs:
           mv destination/fuze-presentation.html destination/index.html
           cp *.css destination/
           cp *.png destination/
-          cp ads.txt destination/
+          cp *.txt destination/
+          cp *.xml destination/
           cp -r js/. destination/js
           cp -r images/. destination/images
           cp -r cursors/. destination/cursors
